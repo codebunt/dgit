@@ -15,7 +15,6 @@ public class DGitConnection {
 
 	static {
 		//createEbeanServer();
-
 	}
 
 	private static EbeanServer createEbeanServer() {

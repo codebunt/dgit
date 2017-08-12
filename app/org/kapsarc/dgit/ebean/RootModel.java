@@ -17,24 +17,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 @Entity
 @Table(name = "v_root")
 public class RootModel extends DBaseModel {
-
-	@Index
-    @Temporal(TemporalType.TIMESTAMP)
-    @CreatedTimestamp
-	public Timestamp ts;
-
-	@Index
-	public String branch;
-
-	@Id
-	public UUID id;
-
-	@Index
-	public String uid;
-
 	@Index
 	public String type;
 
-	@DbJson
-	public JsonNode content;
 }
