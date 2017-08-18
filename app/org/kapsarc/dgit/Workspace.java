@@ -2,14 +2,22 @@ package org.kapsarc.dgit;
 
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
+import java.sql.DriverManager;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
+
+import org.kapsarc.dgit.conf.DgitConfig;
 
 import com.avaje.ebean.EbeanServer;
 import com.avaje.ebean.Transaction;
+
+import play.db.Database;
+import play.db.Databases;
 
 public class Workspace {
 	private Set<Table> tables = new HashSet<Table>();
@@ -18,9 +26,12 @@ public class Workspace {
 
 	private boolean dirty = false;
 
+	private Database database;
+
 	private static HashMap<String, Workspace> map = new HashMap<String, Workspace>();
 
-	public Workspace(Schema schema) throws Exception {
+	private Workspace(Schema schema) throws Exception {
+		initializePool();
 		this.schema = schema;
 		Set<String> wstables = fetchFromDb();
 		for (String tab : wstables) {
@@ -28,31 +39,76 @@ public class Workspace {
 		}
 	}
 
+	private void initializePool() {
+		Map<String, String> pm = new HashMap<>();
+		pm.put("user",DgitConfig.get("pg.uname"));
+		pm.put("password",DgitConfig.get("pg.pass"));
+		pm.put("connectionTestQuery", "SELECT 1");
+		this.database = Databases.createFrom(getDBName(), DgitConfig.get("pg.driver") , DgitConfig.get("pg.url"), pm);
+	}
+
+	private void createdb() throws Exception {
+		Connection conn = null;
+		Statement stmt = null;
+		final String DB_URL = DgitConfig.get("pg.url");
+		try {
+			Class.forName(DgitConfig.get("pg.driver"));
+			System.out.println("Connecting to database...");
+			conn = DriverManager.getConnection(DB_URL, DgitConfig.get("pg.uname"), DgitConfig.get("pg.pass"));
+			System.out.println("Creating database...");
+			stmt = conn.createStatement();
+			String sql = "CREATE DATABASE " + getDBName();
+			stmt.executeUpdate(sql);
+			System.out.println("Database created successfully...");
+		} catch (Exception se) {
+			se.printStackTrace();
+			throw se;
+		} finally {
+			try {
+				if (stmt != null)
+					stmt.close();
+			} catch (SQLException se2) {
+			} // nothing we can do
+			try {
+				if (conn != null)
+					conn.close();
+			} catch (SQLException se) {
+				se.printStackTrace();
+			} // end finally try
+		} // end try
+
+	}
+
+	private String getDBName() {
+		return schema.name + "_" + schema.branch.getName();
+	}
+
 	public static synchronized Workspace get(Schema schema) throws Exception {
-		String key = schema.name + "|" + schema.branch;
+		String key = schema.name + "|" + schema.branch.getId();
 		if (map.get(key) == null) {
 			Workspace s = new Workspace(schema);
 			map.put(key, s);
 		}
 		return map.get(key);
 	}
-	
+
 	private String getTableNamePrefix() {
-		return "u_"+this.schema.name+"_"+this.schema.branch+"_";
+		return "u_" + this.schema.name + "_" + this.schema.branch.getName() + "_";
 	}
 
-	public Workspace addTable(String tabname) throws Exception {
+	public Table addTable(String tabname) throws Exception {
 		tabname = tabname.toLowerCase();
-		if(!tabname.startsWith(getTableNamePrefix())) {
+		if (!tabname.startsWith(getTableNamePrefix())) {
 			tabname = getTableNamePrefix() + tabname;
 		}
-		tables.add(Table.get(tabname, this));
+		Table table = Table.get(tabname, this);
+		tables.add(table);
 		this.dirty = true;
-		return this;
+		return table;
 	}
 
 	public String getBranch() {
-		return schema.branch;
+		return schema.branch.getId();
 	}
 
 	private Set<String> fetchFromDb() throws Exception {
@@ -111,7 +167,12 @@ public class Workspace {
 				stmt.executeUpdate("CREATE TABLE " + table + " (_ID TEXT PRIMARY KEY NOT NULL)");
 				stmt.close();
 			}
-			transaction.close();
+			System.out.println(transaction.isActive());
+			for (Table tab : this.tables) {
+				tab.save();
+				System.out.println(transaction.isActive());
+			}
+			transaction.commit();
 		} catch (Exception e) {
 			e.printStackTrace();
 			transaction.rollback(e);
@@ -127,5 +188,13 @@ public class Workspace {
 			fromWS.add(table.getName());
 		}
 		return fromWS;
+	}
+
+	public Connection getConnection() {
+		return this.database.getConnection();
+	}
+
+	public Database getDatabase() {
+		return database;
 	}
 }

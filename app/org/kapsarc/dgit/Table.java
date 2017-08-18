@@ -9,8 +9,11 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 
+import com.avaje.ebean.Ebean;
 import com.avaje.ebean.EbeanServer;
 import com.avaje.ebean.Transaction;
+import com.avaje.ebean.annotation.Transactional;
+import com.fasterxml.jackson.databind.JsonNode;
 
 public class Table {
 	private HashMap<String, Column> columns = new HashMap<String, Column>();
@@ -31,6 +34,10 @@ public class Table {
 		return list;
 	}
 
+	HashMap<String, Column> columns() {
+		return columns;
+	}
+
 	private static HashMap<String, Table> map = new HashMap<String, Table>();
 
 	private Table(String name, Workspace ws) throws Exception {
@@ -43,10 +50,13 @@ public class Table {
 		columns = fetchFromDb();
 	}
 
+	@Transactional
 	private HashMap<String, Column> fetchFromDb() throws Exception {
+		Transaction transaction = null;
 		try {
 			EbeanServer ebeanServer = DGitConnection.get().getEbeanServer();
-			Transaction transaction = ebeanServer.beginTransaction();
+			transaction = ebeanServer.createTransaction();
+			System.out.println("transaction - " + transaction);
 			Connection connection = transaction.getConnection();
 			DatabaseMetaData metaData = connection.getMetaData();
 			ResultSet columns = metaData.getColumns(null, null, this.name, null);
@@ -56,12 +66,13 @@ public class Table {
 				String type = columns.getString(6);
 				dbtables.put(name, new Column(name, type));
 			}
+			transaction.commit();
 			return dbtables;
 		} catch (Exception e) {
-			DGitConnection.get().getEbeanServer().rollbackTransaction();
+			transaction.rollback();
 			throw e;
 		} finally {
-			DGitConnection.get().getEbeanServer().endTransaction();
+			transaction.end();
 		}
 	}
 
@@ -74,7 +85,7 @@ public class Table {
 		String key = name + "|" + ws.getBranch();
 		if (map.get(key) == null) {
 			Table s = new Table(name, ws);
-			map.put(name, s);
+			map.put(key, s);
 		}
 		return map.get(key);
 	}
@@ -97,27 +108,24 @@ public class Table {
 		if (sql == null || sql.equals("")) {
 			return;
 		}
-		EbeanServer ebeanServer = DGitConnection.get().getEbeanServer();
-		Transaction transaction = ebeanServer.beginTransaction();
+		Transaction transaction = Ebean.currentTransaction();
+		System.out.println(transaction.isActive());
 		Connection connection = transaction.getConnection();
 		try {
 			Statement stmt = connection.createStatement();
+			System.out.println(sql);
 			stmt.executeUpdate(sql);
 			stmt.close();
-			transaction.commit();
 		} catch (Exception e) {
 			e.printStackTrace();
-			transaction.rollback();
 			throw e;
-		} finally {
-			transaction.end();
 		}
 	}
 
 	private String toSQL() throws Exception {
 		HashMap<String, Column> fromDb = fetchFromDb();
 		ArrayList<Column> toadd = getColumns();
-		ArrayList<Column> todel = getColumns();
+		ArrayList<Column> todel = new ArrayList<>();
 		Iterator<String> iterator = fromDb.keySet().iterator();
 		while (iterator.hasNext()) {
 			String colname = iterator.next();
@@ -144,10 +152,44 @@ public class Table {
 			if (!first) {
 				sql += ",";
 			}
-			sql += "DROP " + column.getName() + " IF EXISTS RESTRICT";
+			sql += "DROP " + column.getName();
 			first = false;
 		}
 		return sql;
+	}
+
+	public void save(JsonNode node) throws Exception {
+		Connection connection = this.ws.getConnection();
+		try {
+			ArrayList<Row> rows = new ArrayList<>();
+			if (node.isArray()) {
+				for (int i = 0; i < node.size(); i++) {
+					rows.add(new Row(node.get(i), this));
+					if (rows.size() > 1000) {
+						saveRecords(rows, connection);
+						rows = new ArrayList<>();
+					}
+				}
+			} else {
+				rows.add(new Row(node, this));
+			}
+			saveRecords(rows , connection);
+			connection.commit();
+		} catch (Exception e) {
+			e.printStackTrace();
+			connection.rollback();
+			throw e;
+		} finally {
+			connection.close();
+		}
+	}
+
+	private void saveRecords(ArrayList<Row> rows, Connection connection) throws Exception {
+		Statement statement = connection.createStatement();
+		for (int i = 0; i < rows.size(); i++) {
+			statement.addBatch(rows.get(i).toSql());
+		}
+		int[] count = statement.executeBatch();
 	}
 
 	public static String unReserve(String col) {
@@ -159,5 +201,9 @@ public class Table {
 
 	public String getName() {
 		return this.name;
+	}
+
+	public void removeColumn(String colname) {
+		columns.remove(colname);
 	}
 }

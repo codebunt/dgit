@@ -18,7 +18,7 @@ public class VersionedTable extends VersionedObject {
 
 	private static HashMap<String, VersionedTable> map = new HashMap<String, VersionedTable>();
 	
-	private VersionedTable(String name, String branch) throws Exception {
+	private VersionedTable(String name, Branch branch) throws Exception {
 		this.name = name;
 		this.branch = branch;
 		load();
@@ -32,7 +32,7 @@ public class VersionedTable extends VersionedObject {
 		try {
 			EbeanServer ebeanServer = DGitConnection.get().getEbeanServer();
 			Query<TableModel> query = ebeanServer.createQuery(TableModel.class);
-			List<TableModel> list = query.where().eq("name", name).eq("branch", branch).orderBy("ts").setMaxRows(1).findList();
+			List<TableModel> list = query.where().eq("name", name).eq("branch", branch.getId()).orderBy("ts").setMaxRows(1).findList();
 			if(list.size() == 0) {
 				throw new Exception("Invalid branch or schema name");
 			}
@@ -57,8 +57,8 @@ public class VersionedTable extends VersionedObject {
 		dirty = true;
 	}
 
-	public static synchronized VersionedTable get(String name, String branch) throws Exception {
-		String key = name + "|" + branch;
+	public static synchronized VersionedTable get(String name, Branch branch) throws Exception {
+		String key = name + "|" + branch.getId();
 		if (map.get(key) == null) {
 			VersionedTable s = new VersionedTable(name, branch);
 			map.put(name, s);
@@ -68,13 +68,13 @@ public class VersionedTable extends VersionedObject {
 
 	@Override
 	public int hashCode() {
-		return (name+"|"+branch).hashCode();
+		return (name+"|"+branch.getId()).hashCode();
 	}
 	
 	@Override
 	public boolean equals(Object other) {
 		if(other instanceof VersionedTable) {
-			return (name.equals(((VersionedTable) other).name) && branch.equals(((VersionedTable) other).branch));
+			return (name.equals(((VersionedTable) other).name) && branch.getId().equals(((VersionedTable) other).branch.getId()));
 		}
 		return false;
 	}

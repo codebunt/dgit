@@ -5,7 +5,7 @@ abstract class VersionedObject {
 
 	String owner;
 
-	String branch;
+	Branch branch;
 
 	boolean dirty = false;
 
@@ -25,11 +25,11 @@ abstract class VersionedObject {
 		this.owner = owner;
 	}
 
-	public String getBranch() {
+	public Branch getBranch() {
 		return branch;
 	}
 
-	public void setBranch(String branch) {
+	public void setBranch(Branch branch) {
 		this.branch = branch;
 	}
 

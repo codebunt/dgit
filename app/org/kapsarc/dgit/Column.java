@@ -20,14 +20,13 @@ public class Column {
 	
 	@Override
 	public int hashCode() {
-		return (name + "|" + type).hashCode();
+		return (name).hashCode();
 	}
 
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof Column) {
-			return (name.equals(((Column) other).name)
-					&& type.equals(((Column) other).type));
+			return (name.equals(((Column) other).name));
 		}
 		return false;
 	}
